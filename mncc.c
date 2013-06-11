@@ -21,7 +21,6 @@
  *
  */
 
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -179,11 +178,8 @@ static int mncc_setup_cnf(struct gsm_call *call, int msg_type,
 			  struct gsm_mncc *connect)
 {
 	struct gsm_mncc connect_ack, frame_recv;
-//	struct gsm_network *net = call->net;
 	struct gsm_call *remote;
 	uint32_t refs[2];
-
-	printf("mncc_setup_cnf ----------------------------------------------\n");
 
 	/* acknowledge connect */
 	memset(&connect_ack, 0, sizeof(struct gsm_mncc));
@@ -192,43 +188,24 @@ static int mncc_setup_cnf(struct gsm_call *call, int msg_type,
 	mncc_tx_to_cc(call->net, MNCC_SETUP_COMPL_REQ, &connect_ack);
 
 	/* send connect message to remote */
-	if (!(remote = get_call_ref(call->remote_ref))) {
-		printf("get call ref found nothing... from %d\n", call->remote_ref);
-		//return 0;
-	} else {
+	if ((remote = get_call_ref(call->remote_ref))) {
 		connect->callref = remote->callref;
 		DEBUGP(DMNCC, "(call %x) Sending CONNECT to remote.\n", call->callref);
 		mncc_tx_to_cc(remote->net, MNCC_SETUP_RSP, connect);
 	}
 
-	/* bridge tch */
-	refs[0] = call->callref;
-	refs[1] = call->remote_ref;
-	DEBUGP(DMNCC, "(call %x) Bridging with remote.\n", call->callref);
+	if (remote) {
+		/* bridge tch */
+		refs[0] = call->callref;
+		refs[1] = call->remote_ref;
+		DEBUGP(DMNCC, "(call %x) Bridging with remote.\n", call->callref);
 
-	printf("ipacc_rtp_direct: %d\n", ipacc_rtp_direct);
-
-	/* in direct mode, we always have to bridge the channels */
-//	if (ipacc_rtp_direct)
 		return mncc_tx_to_cc(call->net, MNCC_BRIDGE, refs);
-
-	/* proxy mode */
-/*	if (!net->handover.active) {
-		printf("handover active\n");
-		//in the no-handover case, we can bridge, i.e. use
-		//the old RTP proxy code
-		return mncc_tx_to_cc(call->net, MNCC_BRIDGE, refs);
-	} else { */
-		printf("Proxy mode\n");
-		/* in case of handover, we need to re-write the RTP
-		 * SSRC, sequence and timestamp values and thus
-		 * need to enable RTP receive for both directions */
+	} else {
 		memset(&frame_recv, 0, sizeof(struct gsm_mncc));
 		frame_recv.callref = call->callref;
-		mncc_tx_to_cc(call->net, MNCC_FRAME_RECV, &frame_recv);
-		frame_recv.callref = call->remote_ref;
 		return mncc_tx_to_cc(call->net, MNCC_FRAME_RECV, &frame_recv);
-	//}
+	}
 }
 
 static int mncc_disc_ind(struct gsm_call *call, int msg_type,
@@ -312,7 +289,7 @@ int hack_call_phone(const char *dest)
 	struct gsm_subscriber *subscriber;
 	subscriber = subscr_get_by_extension(bsc_gsmnet, dest);
 	if (!subscriber)
-		return -1; /* There is no one here for ya */
+		return -1;
 
 	struct gsm_mncc mncc;
 
@@ -339,11 +316,8 @@ int mncc_recv(struct gsm_network *net, struct msgb *msg)
 	int msg_type = data->msg_type;
 	int callref;
 	struct gsm_call *call = NULL, *callt;
+	struct gsm_trans *transmitter;
 	int rc = 0;
-
-	/* Special messages */
-	switch(msg_type) {
-	}
 
 	/* find callref */
 	callref = data->callref;
@@ -356,9 +330,6 @@ int mncc_recv(struct gsm_network *net, struct msgb *msg)
 
 	/* create callref, if setup is received */
 	if (!call) {
-		//if (msg_type != MNCC_SETUP_IND)
-		//	goto out_free; /* drop */
-		/* create call */
 		if (!(call = talloc_zero(tall_call_ctx, struct gsm_call))) {
 			struct gsm_mncc rel;
 
@@ -374,8 +345,6 @@ int mncc_recv(struct gsm_network *net, struct msgb *msg)
 		call->callref = callref;
 		DEBUGP(DMNCC, "(call %x) Call created.\n", call->callref);
 	}
-
-//	struct gsm_trans *transmitter;
 
 	switch (msg_type) {
 	case GSM_TCHF_FRAME:
@@ -393,8 +362,10 @@ int mncc_recv(struct gsm_network *net, struct msgb *msg)
 		break;
 	case MNCC_SETUP_CNF:
 		rc = mncc_setup_cnf(call, msg_type, arg);
-		//transmitter = trans_find_by_callref(call->net, call->callref);
-		//do_answer(transmitter->conn->lchan->abis_ip.rtp_socket);
+		if (!call->remote_ref) {
+			transmitter = trans_find_by_callref(call->net, call->callref);
+			do_answer(transmitter->conn->lchan->abis_ip.rtp_socket);
+		}
 		break;
 	case MNCC_SETUP_COMPL_IND:
 		break;
