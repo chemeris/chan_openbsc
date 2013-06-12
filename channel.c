@@ -79,10 +79,11 @@ static struct ast_rtp_glue openbsc_rtp_glue = {
 	.update_peer		= cb_ast_set_rtp_peer,
 };
 
-struct ast_rtp_instance *rtp; // FIXME must be in a structure
-struct ast_channel *channel;
-struct addrinfo *res;
-struct rtp_socket *rs;
+struct ast_rtp_instance *rtp = NULL; // FIXME must be in a structure
+struct ast_channel *channel = NULL;
+struct addrinfo *res = NULL;
+struct rtp_socket *rs = NULL;
+uint32_t g_callref = 0;
 
 static int start_rtp()
 {
@@ -136,7 +137,7 @@ static int start_rtp()
 	return 0;
 }
 
-static struct ast_channel *openbsc_new_channel(const char *linkedid)
+static struct ast_channel *openbsc_new_channel(const char *linkedid, const char *dest)
 {
 	struct ast_format tmpfmt;
 
@@ -145,7 +146,7 @@ static struct ast_channel *openbsc_new_channel(const char *linkedid)
 					"cid_num",	/* cid_num */
 					"cid_name",	/* cid_name */
 					"code",		/* code */
-					"1",		/* extension */
+					dest,		/* extension */
 					"localsets",	/* context */
 					linkedid,	/* linked ID */
 					0,		/* callnums */
@@ -184,7 +185,7 @@ static struct ast_channel *cb_ast_request(const char *type,
 		type, ast_getformatname_multiple(buf, sizeof(buf), cap),
 		destination, *cause);
 
-	channel = openbsc_new_channel(requestor ? ast_channel_linkedid(requestor) : NULL);
+	channel = openbsc_new_channel(requestor ? ast_channel_linkedid(requestor) : NULL, "");
 
 	return channel;
 }
@@ -211,10 +212,16 @@ static int cb_ast_hangup(struct ast_channel *ast)
 {
 	ast_log(LOG_NOTICE, "\n");
 
-	ast_rtp_instance_stop(rtp);
-	ast_rtp_instance_destroy(rtp);
+	if (rtp) {
+		ast_rtp_instance_stop(rtp);
+		ast_rtp_instance_destroy(rtp);
+		rtp = NULL;
+	}
 
-	rtp_socket_free(rs);
+	if (rs) {
+		rtp_socket_free(rs);
+		res = NULL;
+	}
 
 	return 0;
 }
@@ -222,6 +229,7 @@ static int cb_ast_hangup(struct ast_channel *ast)
 static int cb_ast_answer(struct ast_channel *ast)
 {
 	ast_log(LOG_NOTICE, "\n");
+	hack_connect_phone(g_callref);
 	return 0;
 }
 
@@ -301,6 +309,17 @@ static int cb_ast_set_rtp_peer(struct ast_channel *channel,
 
 	ast_log(LOG_NOTICE, "\n");
 	return -1;
+}
+
+void do_outgoing_call(const char *dest, uint32_t callref)
+{
+	ast_log(LOG_DEBUG, "outgoing call: %s::%u\n", dest, callref);
+
+	g_callref = callref;
+	channel = openbsc_new_channel(NULL, dest);
+
+	ast_setstate(channel, AST_STATE_RING);
+	ast_pbx_start(channel);
 }
 
 void do_answer(struct rtp_socket *rtp_socket)

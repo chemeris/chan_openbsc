@@ -54,7 +54,6 @@ static void free_call(struct gsm_call *call)
 	talloc_free(call);
 }
 
-
 static struct gsm_call *get_call_ref(uint32_t callref)
 {
 	struct gsm_call *callt;
@@ -82,6 +81,7 @@ static int mncc_setup_ind(struct gsm_call *call, int msg_type,
 {
 	struct gsm_mncc mncc;
 	struct gsm_call *remote;
+	struct gsm_subscriber *remote_subscr;
 
 	memset(&mncc, 0, sizeof(struct gsm_mncc));
 	mncc.callref = call->callref;
@@ -108,21 +108,24 @@ static int mncc_setup_ind(struct gsm_call *call, int msg_type,
 		goto out_reject;
 	}
 
-	/* create remote call */
-	if (!(remote = talloc_zero(tall_call_ctx, struct gsm_call))) {
-		mncc_set_cause(&mncc, GSM48_CAUSE_LOC_PRN_S_LU,
-				GSM48_CC_CAUSE_RESOURCE_UNAVAIL);
-		goto out_reject;
-	}
-	llist_add_tail(&remote->entry, &call_list);
-	remote->net = call->net;
-	remote->callref = new_callref++;
-	DEBUGP(DMNCC, "(call %x) Creating new remote instance %x.\n",
-		call->callref, remote->callref);
+	remote_subscr = subscr_get_by_extension(bsc_gsmnet, setup->called.number);
+	if (remote_subscr) {
+		/* create remote call */
+		if (!(remote = talloc_zero(tall_call_ctx, struct gsm_call))) {
+			mncc_set_cause(&mncc, GSM48_CAUSE_LOC_PRN_S_LU,
+					GSM48_CC_CAUSE_RESOURCE_UNAVAIL);
+			goto out_reject;
+		}
+		llist_add_tail(&remote->entry, &call_list);
+		remote->net = call->net;
+		remote->callref = new_callref++;
+		DEBUGP(DMNCC, "(call %x) Creating new remote instance %x.\n",
+			call->callref, remote->callref);
 
-	/* link remote call */
-	call->remote_ref = remote->callref;
-	remote->remote_ref = call->callref;
+		/* link remote call */
+		call->remote_ref = remote->callref;
+		remote->remote_ref = call->callref;
+	}
 
 	/* send call proceeding */
 	memset(&mncc, 0, sizeof(struct gsm_mncc));
@@ -137,10 +140,15 @@ static int mncc_setup_ind(struct gsm_call *call, int msg_type,
 	DEBUGP(DMNCC, "(call %x) Modify channel mode.\n", call->callref);
 	mncc_tx_to_cc(call->net, MNCC_LCHAN_MODIFY, &mncc);
 
-	/* send setup to remote */
-	setup->callref = remote->callref;
-	DEBUGP(DMNCC, "(call %x) Forwarding SETUP to remote.\n", call->callref);
-	return mncc_tx_to_cc(remote->net, MNCC_SETUP_REQ, setup);
+	if (remote_subscr) {
+		/* send setup to remote */
+		setup->callref = remote->callref;
+		DEBUGP(DMNCC, "(call %x) Forwarding SETUP to remote.\n", call->callref);
+		return mncc_tx_to_cc(remote->net, MNCC_SETUP_REQ, setup);
+	} else {
+		do_outgoing_call(setup->called.number, call->callref);
+		return 0;
+	}
 
 out_reject:
 	mncc_tx_to_cc(call->net, MNCC_REJ_REQ, &mncc);
@@ -282,6 +290,36 @@ static int mncc_rcv_tchf(struct gsm_call *call, int msg_type,
 		return -EIO;
 
 	return rtp_send_frame(remote_trans->conn->lchan->abis_ip.rtp_socket, dfr);
+}
+
+int hack_connect_phone(uint32_t callref)
+{
+	DEBUGP(DMNCC, "hack_connect_phone: %d\n", callref);
+
+	struct gsm_call *call = NULL, *callt;
+	llist_for_each_entry(callt, &call_list, entry) {
+		if (callt->callref == callref) {
+			call = callt;
+			break;
+		}
+	}
+
+	struct gsm_trans *transmitter;
+	struct gsm_mncc connect;
+
+	memset(&connect, 0, sizeof(struct gsm_mncc));
+	connect.callref = call->callref;
+	DEBUGP(DMNCC, "(call %x) Sending CONNECT to remote.\n", call->callref);
+	mncc_tx_to_cc(call->net, MNCC_SETUP_RSP, &connect);
+
+	memset(&connect, 0, sizeof(struct gsm_mncc));
+	connect.callref = call->callref;
+	mncc_tx_to_cc(call->net, MNCC_FRAME_RECV, &connect);
+
+	transmitter = trans_find_by_callref(call->net, call->callref);
+	do_answer(transmitter->conn->lchan->abis_ip.rtp_socket);
+
+	return 0;
 }
 
 int hack_call_phone(const char *dest)
