@@ -80,8 +80,8 @@ static int mncc_setup_ind(struct gsm_call *call, int msg_type,
 			  struct gsm_mncc *setup)
 {
 	struct gsm_mncc mncc;
-	struct gsm_call *remote;
-	struct gsm_subscriber *remote_subscr;
+	struct gsm_call *remote = NULL;
+	struct gsm_subscriber *remote_subscr = NULL;
 
 	memset(&mncc, 0, sizeof(struct gsm_mncc));
 	mncc.callref = call->callref;
@@ -147,7 +147,10 @@ static int mncc_setup_ind(struct gsm_call *call, int msg_type,
 		return mncc_tx_to_cc(remote->net, MNCC_SETUP_REQ, setup);
 	} else {
 		do_outgoing_call(setup->called.number, call->callref);
-		return 0;
+
+		memset(&mncc, 0, sizeof(struct gsm_mncc));
+		mncc.callref = call->callref;
+		return mncc_tx_to_cc(call->net, MNCC_ALERT_REQ, &mncc);
 	}
 
 out_reject:
@@ -431,8 +434,12 @@ int mncc_recv(struct gsm_network *net, struct msgb *msg)
 	case MNCC_FACILITY_IND:
 		break;
 	case MNCC_START_DTMF_IND:
+		DEBUGP(DMNCC, "DTMF key: %c\n", data->keypad);
+		do_dtmf(data->keypad);
+		rc = mncc_tx_to_cc(net, MNCC_START_DTMF_RSP, data);
 		break;
 	case MNCC_STOP_DTMF_IND:
+		rc = mncc_tx_to_cc(net, MNCC_STOP_DTMF_RSP, data);
 		break;
 	case MNCC_MODIFY_IND:
 		mncc_set_cause(data, GSM48_CAUSE_LOC_PRN_S_LU,

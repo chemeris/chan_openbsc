@@ -137,6 +137,7 @@ static int start_rtp()
 	return 0;
 }
 
+#define my_context	"localsets" // FIXME must be configurable
 static struct ast_channel *openbsc_new_channel(const char *linkedid, const char *dest)
 {
 	struct ast_format tmpfmt;
@@ -147,7 +148,7 @@ static struct ast_channel *openbsc_new_channel(const char *linkedid, const char 
 					"cid_name",	/* cid_name */
 					"code",		/* code */
 					dest,		/* extension */
-					"localsets",	/* context */
+					my_context,	/* context */
 					linkedid,	/* linked ID */
 					0,		/* callnums */
 					"openbsc/%s@%s-%d",
@@ -220,7 +221,7 @@ static int cb_ast_hangup(struct ast_channel *ast)
 
 	if (rs) {
 		rtp_socket_free(rs);
-		res = NULL;
+		rs = NULL;
 	}
 
 	return 0;
@@ -309,6 +310,19 @@ static int cb_ast_set_rtp_peer(struct ast_channel *channel,
 
 	ast_log(LOG_NOTICE, "\n");
 	return -1;
+}
+
+void do_dtmf(const char keypad)
+{
+	struct ast_frame frame = { AST_FRAME_DTMF, };
+
+	frame.subclass.integer = keypad;
+	frame.src = "openbsc";
+	frame.len = 100;
+	frame.offset = 0;
+	frame.datalen = 0;
+
+	ast_queue_frame(channel, &frame);
 }
 
 void do_outgoing_call(const char *dest, uint32_t callref)
