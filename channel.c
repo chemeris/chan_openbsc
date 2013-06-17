@@ -37,15 +37,15 @@ static struct ast_channel *cb_ast_request(const char *type,
 						const char *destination,
 						int *cause);
 static int cb_ast_devicestate(const char *data);
-static int cb_ast_call(struct ast_channel *ast, const char *dest, int timeout);
-static int cb_ast_hangup(struct ast_channel *ast);
-static int cb_ast_answer(struct ast_channel *ast);
-static struct ast_frame *cb_ast_read(struct ast_channel *ast);
-static int cb_ast_write(struct ast_channel *ast, struct ast_frame *frame);
-static int cb_ast_indicate(struct ast_channel *ast, int ind, const void *data, size_t datalen);
+static int cb_ast_call(struct ast_channel *channel, const char *dest, int timeout);
+static int cb_ast_hangup(struct ast_channel *channel);
+static int cb_ast_answer(struct ast_channel *channel);
+static struct ast_frame *cb_ast_read(struct ast_channel *channel);
+static int cb_ast_write(struct ast_channel *channel, struct ast_frame *frame);
+static int cb_ast_indicate(struct ast_channel *channel, int ind, const void *data, size_t datalen);
 static int cb_ast_fixup(struct ast_channel *oldchan, struct ast_channel *newchan);
-static int cb_ast_senddigit_begin(struct ast_channel *ast, char digit);
-static int cb_ast_senddigit_end(struct ast_channel *ast, char digit, unsigned int duration);
+static int cb_ast_senddigit_begin(struct ast_channel *channel, char digit);
+static int cb_ast_senddigit_end(struct ast_channel *channel, char digit, unsigned int duration);
 
 static enum ast_rtp_glue_result cb_ast_get_rtp_peer(struct ast_channel *channel, struct ast_rtp_instance **instance);
 static int cb_ast_set_rtp_peer(struct ast_channel *channel,
@@ -74,53 +74,67 @@ static struct ast_channel_tech openbsc_tech = {
 };
 
 static struct ast_rtp_glue openbsc_rtp_glue = {
-	.type			= "sccp",
+	.type			= "openbsc",
 	.get_rtp_info		= cb_ast_get_rtp_peer,
 	.update_peer		= cb_ast_set_rtp_peer,
 };
 
-struct ast_rtp_instance *rtp = NULL; // FIXME must be in a structure
-struct ast_channel *channel = NULL;
-struct addrinfo *res = NULL;
-struct rtp_socket *rs = NULL;
-uint32_t g_callref = 0;
+struct subchannel {
+	struct ast_rtp_instance *rtp;
+	struct ast_channel *channel;
+	struct addrinfo *res;
+	struct rtp_socket *rs;
+	uint32_t callref;
+};
 
-static int start_rtp()
+static int start_rtp(struct ast_channel *channel)
 {
 	ast_log(LOG_DEBUG, "start rtp\n");
 
+	struct subchannel *subchan = NULL;
 	struct ast_sockaddr bindaddr_tmp;
-	rtp = NULL;
+
+	if (channel == NULL) {
+		ast_log(LOG_DEBUG, "channel is NULL\n");
+		return -1;
+	}
+
+	subchan = ast_channel_tech_pvt(channel);
+	if (subchan == NULL) {
+		ast_log(LOG_DEBUG, "channel is NULL\n");
+		return -1;
+	}
 
 	// FIXME use generic addr
 	ast_parse_arg("172.16.32.20", PARSE_ADDR, &bindaddr_tmp);
-	rtp = ast_rtp_instance_new("asterisk", sched, &bindaddr_tmp, NULL);
+	subchan->rtp = ast_rtp_instance_new("asterisk", sched, &bindaddr_tmp, NULL);
 
-	if (rtp) {
-		ast_rtp_instance_set_prop(rtp, AST_RTP_PROPERTY_RTCP, 1);
-
-		if (channel) {
-			ast_channel_set_fd(channel, 0, ast_rtp_instance_fd(rtp, 0));
-			ast_channel_set_fd(channel, 1, ast_rtp_instance_fd(rtp, 1));
-		}
-
-                ast_rtp_instance_set_qos(rtp, 0, 0, "sccp rtp");
-                ast_rtp_instance_set_prop(rtp, AST_RTP_PROPERTY_NAT, 0);
-		ast_rtp_codecs_packetization_set(ast_rtp_instance_get_codecs(rtp),
-						rtp, &default_prefs);
+	if (subchan->rtp == NULL) {
+		ast_log(LOG_DEBUG, "rtp is NULL\n");
+		return -1;
 	}
+
+	ast_rtp_instance_set_prop(subchan->rtp, AST_RTP_PROPERTY_RTCP, 1);
+
+	ast_channel_set_fd(channel, 0, ast_rtp_instance_fd(subchan->rtp, 0));
+	ast_channel_set_fd(channel, 1, ast_rtp_instance_fd(subchan->rtp, 1));
+
+	ast_rtp_instance_set_qos(subchan->rtp, 0, 0, "openbsc rtp");
+	ast_rtp_instance_set_prop(subchan->rtp, AST_RTP_PROPERTY_NAT, 0);
+	ast_rtp_codecs_packetization_set(ast_rtp_instance_get_codecs(subchan->rtp),
+					subchan->rtp, &default_prefs);
+
 
 	struct sockaddr_in local;
 	struct ast_sockaddr local_tmp;
 
-	if (rtp)
-		ast_rtp_instance_get_local_address(rtp, &local_tmp);
+	ast_rtp_instance_get_local_address(subchan->rtp, &local_tmp);
 
 	ast_sockaddr_to_sin(&local_tmp, &local);
 	ast_log(LOG_DEBUG, "rtp local address: %s:%d\n", ast_inet_ntoa(local.sin_addr), ntohs(local.sin_port));
 
-	rs = rtp_socket_create();
-	rtp_socket_connect(rs, ntohl(local.sin_addr.s_addr), ntohs(local.sin_port));
+	subchan->rs = rtp_socket_create();
+	rtp_socket_connect(subchan->rs, ntohl(local.sin_addr.s_addr), ntohs(local.sin_port));
 
 	// set remote RTP
 
@@ -128,11 +142,11 @@ static int start_rtp()
 	struct ast_sockaddr remote_tmp;
 
 	remote.sin_family = AF_INET;
-	remote.sin_addr.s_addr = rs->rtp.sin_local.sin_addr.s_addr;
-	remote.sin_port = rs->rtp.sin_local.sin_port;
+	remote.sin_addr.s_addr = subchan->rs->rtp.sin_local.sin_addr.s_addr;
+	remote.sin_port = subchan->rs->rtp.sin_local.sin_port;
 
 	ast_sockaddr_from_sin(&remote_tmp, &remote);
-	ast_rtp_instance_set_remote_address(rtp, &remote_tmp);
+	ast_rtp_instance_set_remote_address(subchan->rtp, &remote_tmp);
 
 	return 0;
 }
@@ -141,6 +155,8 @@ static int start_rtp()
 static struct ast_channel *openbsc_new_channel(const char *linkedid, const char *dest)
 {
 	struct ast_format tmpfmt;
+	struct subchannel *subchan;
+	struct ast_channel *channel;
 
 	channel = ast_channel_alloc(	1,		/* needqueue */
 					AST_STATE_DOWN,	/* state */
@@ -157,7 +173,6 @@ static struct ast_channel *openbsc_new_channel(const char *linkedid, const char 
 					0);
 
 	ast_format_cap_copy(ast_channel_nativeformats(channel), default_cap);
-
 	ast_best_codec(ast_channel_nativeformats(channel), &tmpfmt);
 
 	ast_format_copy(ast_channel_writeformat(channel), &tmpfmt);
@@ -165,8 +180,13 @@ static struct ast_channel *openbsc_new_channel(const char *linkedid, const char 
 	ast_format_copy(ast_channel_readformat(channel), &tmpfmt);
 	ast_format_copy(ast_channel_rawreadformat(channel), &tmpfmt);
 
-
 	ast_channel_tech_set(channel, &openbsc_tech);
+
+	subchan = calloc(1, sizeof(struct subchannel));
+	ast_channel_tech_pvt_set(channel, subchan);
+
+	subchan->channel = channel;
+
 	return channel;
 }
 
@@ -187,10 +207,8 @@ static struct ast_channel *cb_ast_request(const char *type,
 		destination, *cause);
 
 	channel = openbsc_new_channel(requestor ? ast_channel_linkedid(requestor) : NULL, "");
-
 	return channel;
 }
-
 
 static int cb_ast_devicestate(const char *data)
 {
@@ -202,48 +220,83 @@ static int cb_ast_call(struct ast_channel *channel, const char *dest, int timeou
 {
 	ast_log(LOG_NOTICE, "\n");
 
+	struct subchannel *subchan;
+
+	subchan = ast_channel_tech_pvt(channel);
+	if (subchan == NULL) {
+		ast_log(LOG_DEBUG, "subchan is NULL\n");
+		return 0;
+	}
+
         ast_setstate(channel, AST_STATE_RINGING);
         ast_queue_control(channel, AST_CONTROL_RINGING);
 
 	ast_log(LOG_DEBUG, "Destination called: %s\n", dest);
-	return hack_call_phone(dest);
+	return hack_call_phone(dest, (void*)subchan);
 }
 
-static int cb_ast_hangup(struct ast_channel *ast)
+static int cb_ast_hangup(struct ast_channel *channel)
 {
 	ast_log(LOG_NOTICE, "\n");
 
-	if (rtp) {
-		ast_rtp_instance_stop(rtp);
-		ast_rtp_instance_destroy(rtp);
-		rtp = NULL;
+	struct subchannel *subchan = NULL;
+
+	subchan = ast_channel_tech_pvt(channel);
+	if (subchan == NULL) {
+		ast_log(LOG_DEBUG, "subchan is NULL\n");
+		return -1;
 	}
 
-	if (rs) {
-		rtp_socket_free(rs);
-		rs = NULL;
+	if (subchan->rtp) {
+		ast_rtp_instance_stop(subchan->rtp);
+		ast_rtp_instance_destroy(subchan->rtp);
+		subchan->rtp = NULL;
 	}
+
+	if (subchan->rs) {
+		rtp_socket_free(subchan->rs);
+		subchan->rs = NULL;
+	}
+
+	free(subchan);
+	ast_channel_tech_pvt_set(channel, NULL);
 
 	return 0;
 }
 
-static int cb_ast_answer(struct ast_channel *ast)
+static int cb_ast_answer(struct ast_channel *channel)
 {
 	ast_log(LOG_NOTICE, "\n");
-	hack_connect_phone(g_callref);
+
+	struct subchannel *subchan = NULL;
+
+	subchan = ast_channel_tech_pvt(channel);
+	if (subchan == NULL) {
+		ast_log(LOG_DEBUG, "subchan is NULL\n");
+		return -1;
+	}
+
+	hack_connect_phone(subchan->callref);
 	return 0;
 }
 
-static struct ast_frame *cb_ast_read(struct ast_channel *ast)
+static struct ast_frame *cb_ast_read(struct ast_channel *channel)
 {
 	struct ast_frame *frame = NULL;
+	struct subchannel *subchan = NULL;
+
+	subchan = ast_channel_tech_pvt(channel);
+	if (subchan == NULL) {
+		ast_log(LOG_DEBUG, "subchan is NULL\n");
+		return frame;
+	}
 
 	switch (ast_channel_fdno(channel)) {
 	case 0:
-		frame = ast_rtp_instance_read(rtp, 0);
+		frame = ast_rtp_instance_read(subchan->rtp, 0);
 		break;
 	case 1:
-		frame = ast_rtp_instance_read(rtp, 1);
+		frame = ast_rtp_instance_read(subchan->rtp, 1);
 		break;
 	default:
 		frame = &ast_null_frame;
@@ -260,14 +313,21 @@ static struct ast_frame *cb_ast_read(struct ast_channel *ast)
 	return frame;
 }
 
-static int cb_ast_write(struct ast_channel *ast, struct ast_frame *frame)
+static int cb_ast_write(struct ast_channel *channel, struct ast_frame *frame)
 {
-	if (rtp)
-		ast_rtp_instance_write(rtp, frame);
+	struct subchannel *subchan = NULL;
+
+	subchan = ast_channel_tech_pvt(channel);
+	if (subchan == NULL) {
+		ast_log(LOG_DEBUG, "subchan is NULL\n");
+		return -1;
+	}
+	if (subchan->rtp)
+		ast_rtp_instance_write(subchan->rtp, frame);
 	return 0;
 }
 
-static int cb_ast_indicate(struct ast_channel *ast, int ind, const void *data, size_t datalen)
+static int cb_ast_indicate(struct ast_channel *channel, int ind, const void *data, size_t datalen)
 {
 	ast_log(LOG_NOTICE, "\n");
 	return 0;
@@ -279,13 +339,13 @@ static int cb_ast_fixup(struct ast_channel *oldchan, struct ast_channel *newchan
 	return 0;
 }
 
-static int cb_ast_senddigit_begin(struct ast_channel *ast, char digit)
+static int cb_ast_senddigit_begin(struct ast_channel *channel, char digit)
 {
 	ast_log(LOG_NOTICE, "\n");
 	return 0;
 }
 
-static int cb_ast_senddigit_end(struct ast_channel *ast, char digit, unsigned int duration)
+static int cb_ast_senddigit_end(struct ast_channel *channel, char digit, unsigned int duration)
 {
 	ast_log(LOG_NOTICE, "\n");
 	return 0;
@@ -295,8 +355,20 @@ static enum ast_rtp_glue_result cb_ast_get_rtp_peer(struct ast_channel *channel,
 {
 	ast_log(LOG_NOTICE, "\n");
 
-	ao2_ref(rtp, +1);
-	*instance = rtp;
+	struct subchannel *subchan;
+	subchan = ast_channel_tech_pvt(channel);
+	if (subchan == NULL) {
+		ast_log(LOG_DEBUG, "subchan is NULL\n");
+		return AST_RTP_GLUE_RESULT_FORBID;
+	}
+
+	if (subchan->rtp == NULL) {
+		ast_log(LOG_DEBUG, "rtp is NULL\n");
+		return AST_RTP_GLUE_RESULT_FORBID;
+	}
+
+	ao2_ref(subchan->rtp, +1);
+	*instance = subchan->rtp;
 	return AST_RTP_GLUE_RESULT_LOCAL;
 }
 
@@ -312,9 +384,21 @@ static int cb_ast_set_rtp_peer(struct ast_channel *channel,
 	return -1;
 }
 
-void do_dtmf(const char keypad)
+void do_dtmf(const char keypad, void *data)
 {
+	struct subchannel *subchan;
 	struct ast_frame frame = { AST_FRAME_DTMF, };
+
+	subchan = data;
+	if (subchan == NULL) {
+		ast_log(LOG_DEBUG, "subchan is NULL\n");
+		return;
+	}
+
+	if (subchan->channel == NULL) {
+		ast_log(LOG_DEBUG, "channel is NULL\n");
+		return;
+	}
 
 	frame.subclass.integer = keypad;
 	frame.src = "openbsc";
@@ -322,32 +406,70 @@ void do_dtmf(const char keypad)
 	frame.offset = 0;
 	frame.datalen = 0;
 
-	ast_queue_frame(channel, &frame);
+	ast_queue_frame(subchan->channel, &frame);
 }
 
-void do_outgoing_call(const char *dest, uint32_t callref)
+void *do_outgoing_call(const char *dest, uint32_t callref)
 {
 	ast_log(LOG_DEBUG, "outgoing call: %s::%u\n", dest, callref);
 
-	g_callref = callref;
+	struct subchannel *subchan;
+	struct ast_channel *channel;
+
 	channel = openbsc_new_channel(NULL, dest);
+	if (channel == NULL) {
+		ast_log(LOG_DEBUG, "channel is NULL\n");
+		return NULL;
+	}
+
+	subchan = ast_channel_tech_pvt(channel);
+	if (subchan == NULL) {
+		ast_log(LOG_DEBUG, "subchan is NULL\n");
+		return NULL;
+	}
+
+	subchan->callref = callref;
 
 	ast_setstate(channel, AST_STATE_RING);
 	ast_pbx_start(channel);
+
+	return subchan;
 }
 
-void do_answer(struct rtp_socket *rtp_socket)
+void do_answer(struct rtp_socket *rtp_socket, void *data)
 {
+	struct subchannel *subchan;
+	struct ast_channel *channel;
+
+	subchan = data;
+	if (subchan == NULL) {
+		ast_log(LOG_DEBUG, "subchan is NULL\n");
+		return;
+	}
+
+	channel = subchan->channel;
+	if (channel == NULL) {
+		ast_log(LOG_DEBUG, "channel is NULL\n");
+		return;
+	}
+
 	ast_queue_control(channel, AST_CONTROL_ANSWER);
-	start_rtp();
+	start_rtp(channel);
 
-	rtp_socket_proxy(rs, rtp_socket);
+	rtp_socket_proxy(subchan->rs, rtp_socket);
 }
 
-int do_write_frame(struct gsm_data_frame *dfr)
+void do_write_frame(struct gsm_data_frame *dfr, void *data)
 {
-	rtp_send_frame(rs, dfr);
-	return 0;
+	struct subchannel *subchan;
+
+	subchan = data;
+	if (subchan == NULL) {
+		ast_log(LOG_DEBUG, "subchan is NULL\n");
+		return;
+	}
+
+	rtp_send_frame(subchan->rs, dfr);
 }
 
 static void rtp_init(void)

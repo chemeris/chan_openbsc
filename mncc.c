@@ -146,7 +146,7 @@ static int mncc_setup_ind(struct gsm_call *call, int msg_type,
 		DEBUGP(DMNCC, "(call %x) Forwarding SETUP to remote.\n", call->callref);
 		return mncc_tx_to_cc(remote->net, MNCC_SETUP_REQ, setup);
 	} else {
-		do_outgoing_call(setup->called.number, call->callref);
+		call->ext_ptr = do_outgoing_call(setup->called.number, call->callref);
 
 		memset(&mncc, 0, sizeof(struct gsm_mncc));
 		mncc.callref = call->callref;
@@ -274,25 +274,9 @@ static int mncc_rel_cnf(struct gsm_call *call, int msg_type, struct gsm_mncc *re
 static int mncc_rcv_tchf(struct gsm_call *call, int msg_type,
 			 struct gsm_data_frame *dfr)
 {
-	struct gsm_trans *remote_trans;
-
 	printf("mncc_recv_tchf\n");
-
-	return do_write_frame(dfr);
-
-	remote_trans = trans_find_by_callref(call->net, call->remote_ref);
-
-	/* this shouldn't really happen */
-	if (!remote_trans || !remote_trans->conn) {
-		LOGP(DMNCC, LOGL_ERROR, "No transaction or transaction without lchan?!?\n");
-		return -EIO;
-	}
-
-	/* RTP socket of remote end has meanwhile died */
-	if (!remote_trans->conn->lchan->abis_ip.rtp_socket)
-		return -EIO;
-
-	return rtp_send_frame(remote_trans->conn->lchan->abis_ip.rtp_socket, dfr);
+	do_write_frame(dfr, call->ext_ptr);
+	return 0;
 }
 
 int hack_connect_phone(uint32_t callref)
@@ -320,22 +304,34 @@ int hack_connect_phone(uint32_t callref)
 	mncc_tx_to_cc(call->net, MNCC_FRAME_RECV, &connect);
 
 	transmitter = trans_find_by_callref(call->net, call->callref);
-	do_answer(transmitter->conn->lchan->abis_ip.rtp_socket);
+	do_answer(transmitter->conn->lchan->abis_ip.rtp_socket, call->ext_ptr);
 
 	return 0;
 }
 
-int hack_call_phone(const char *dest)
+int hack_call_phone(const char *dest, void *data)
 {
 	struct gsm_subscriber *subscriber;
 	subscriber = subscr_get_by_extension(bsc_gsmnet, dest);
 	if (!subscriber)
 		return -1;
 
+	struct gsm_call *remote;
+	/* create remote call */
+	remote = talloc_zero(tall_call_ctx, struct gsm_call);
+	if (remote == NULL) {
+		return -1;
+	}
+	llist_add_tail(&remote->entry, &call_list);
+	remote->net = bsc_gsmnet;
+	remote->callref = new_callref++;
+	remote->ext_ptr = data;
+	DEBUGP(DMNCC, "Creating new remote instance %x.\n", remote->callref);
+
 	struct gsm_mncc mncc;
 
 	memset(&mncc, 0, sizeof(struct gsm_mncc));
-	mncc.callref = new_callref++;
+	mncc.callref = remote->callref;
 	mncc.fields |= MNCC_F_CALLING;
 	strcpy(mncc.called.number, dest);
 	mncc_tx_to_cc(bsc_gsmnet, MNCC_SETUP_REQ, &mncc);
@@ -405,7 +401,7 @@ int mncc_recv(struct gsm_network *net, struct msgb *msg)
 		rc = mncc_setup_cnf(call, msg_type, arg);
 		if (!call->remote_ref) {
 			transmitter = trans_find_by_callref(call->net, call->callref);
-			do_answer(transmitter->conn->lchan->abis_ip.rtp_socket);
+			do_answer(transmitter->conn->lchan->abis_ip.rtp_socket, call->ext_ptr);
 		}
 		break;
 	case MNCC_SETUP_COMPL_IND:
@@ -435,7 +431,7 @@ int mncc_recv(struct gsm_network *net, struct msgb *msg)
 		break;
 	case MNCC_START_DTMF_IND:
 		DEBUGP(DMNCC, "DTMF key: %c\n", data->keypad);
-		do_dtmf(data->keypad);
+		do_dtmf(data->keypad, call->ext_ptr);
 		rc = mncc_tx_to_cc(net, MNCC_START_DTMF_RSP, data);
 		break;
 	case MNCC_STOP_DTMF_IND:
