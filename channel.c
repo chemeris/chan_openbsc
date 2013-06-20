@@ -247,6 +247,8 @@ static int cb_ast_hangup(struct ast_channel *channel)
 		return -1;
 	}
 
+	hack_hangup_phone(subchan->callref);
+
 	if (subchan->rtp) {
 		ast_rtp_instance_stop(subchan->rtp);
 		ast_rtp_instance_destroy(subchan->rtp);
@@ -436,7 +438,7 @@ void *do_outgoing_call(const char *dest, uint32_t callref)
 	return subchan;
 }
 
-void do_answer(struct rtp_socket *rtp_socket, void *data)
+void do_answer(struct rtp_socket *rtp_socket, uint32_t callref, void *data)
 {
 	struct subchannel *subchan;
 	struct ast_channel *channel;
@@ -453,6 +455,7 @@ void do_answer(struct rtp_socket *rtp_socket, void *data)
 		return;
 	}
 
+	subchan->callref = callref;
 	ast_queue_control(channel, AST_CONTROL_ANSWER);
 	start_rtp(channel);
 

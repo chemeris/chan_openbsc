@@ -279,6 +279,25 @@ static int mncc_rcv_tchf(struct gsm_call *call, int msg_type,
 	return 0;
 }
 
+void hack_hangup_phone(uint32_t callref)
+{
+	DEBUGP(DMNCC, "hack_hangup_phone: %d\n", callref);
+
+	struct gsm_mncc hangup;
+
+	memset(&hangup, 0, sizeof(struct gsm_mncc));
+	hangup.callref = callref;
+	mncc_set_cause(&hangup, GSM48_CAUSE_LOC_USER,
+			GSM48_CC_CAUSE_NORM_CALL_CLEAR);
+
+	DEBUGP(DMNCC, "(call %x) Releasing remote with cause %d\n",
+		callref, hangup.cause.value);
+
+	mncc_tx_to_cc(bsc_gsmnet, MNCC_DISC_REQ, &hangup);
+
+	return;
+}
+
 int hack_connect_phone(uint32_t callref)
 {
 	DEBUGP(DMNCC, "hack_connect_phone: %d\n", callref);
@@ -304,7 +323,7 @@ int hack_connect_phone(uint32_t callref)
 	mncc_tx_to_cc(call->net, MNCC_FRAME_RECV, &connect);
 
 	transmitter = trans_find_by_callref(call->net, call->callref);
-	do_answer(transmitter->conn->lchan->abis_ip.rtp_socket, call->ext_ptr);
+	do_answer(transmitter->conn->lchan->abis_ip.rtp_socket, call->callref, call->ext_ptr);
 
 	return 0;
 }
@@ -401,7 +420,7 @@ int mncc_recv(struct gsm_network *net, struct msgb *msg)
 		rc = mncc_setup_cnf(call, msg_type, arg);
 		if (!call->remote_ref) {
 			transmitter = trans_find_by_callref(call->net, call->callref);
-			do_answer(transmitter->conn->lchan->abis_ip.rtp_socket, call->ext_ptr);
+			do_answer(transmitter->conn->lchan->abis_ip.rtp_socket, call->callref, call->ext_ptr);
 		}
 		break;
 	case MNCC_SETUP_COMPL_IND:
