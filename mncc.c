@@ -266,6 +266,7 @@ static int mncc_rel_ind(struct gsm_call *call, int msg_type, struct gsm_mncc *re
 
 static int mncc_rel_cnf(struct gsm_call *call, int msg_type, struct gsm_mncc *rel)
 {
+	do_hangup(call->callref, call->ext_ptr);
 	free_call(call);
 	return 0;
 }
@@ -281,9 +282,13 @@ static int mncc_rcv_tchf(struct gsm_call *call, int msg_type,
 
 void hack_hangup_phone(uint32_t callref)
 {
-	DEBUGP(DMNCC, "hack_hangup_phone: %d\n", callref);
+	DEBUGP(DMNCC, "hack_hangup_phone: %u\n", callref);
 
 	struct gsm_mncc hangup;
+	struct gsm_call *call;
+
+	if (!(call = get_call_ref(callref)))
+		return;
 
 	memset(&hangup, 0, sizeof(struct gsm_mncc));
 	hangup.callref = callref;
@@ -302,16 +307,12 @@ int hack_connect_phone(uint32_t callref)
 {
 	DEBUGP(DMNCC, "hack_connect_phone: %d\n", callref);
 
-	struct gsm_call *call = NULL, *callt;
-	llist_for_each_entry(callt, &call_list, entry) {
-		if (callt->callref == callref) {
-			call = callt;
-			break;
-		}
-	}
-
 	struct gsm_trans *transmitter;
 	struct gsm_mncc connect;
+	struct gsm_call *call;
+
+	if (!(call = get_call_ref(callref)))
+		return -1;
 
 	memset(&connect, 0, sizeof(struct gsm_mncc));
 	connect.callref = call->callref;

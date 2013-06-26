@@ -23,8 +23,10 @@
 #include <openbsc/rtp_proxy.h>
 
 #include "bsc.h"
+#include "config.h"
 #include "mncc.h"
 
+struct conf_infos *conf_info;
 static struct ast_sched_context *sched = NULL;
 static pthread_t g_main_tid;
 
@@ -59,18 +61,18 @@ static struct ast_channel_tech openbsc_tech = {
 	.type			= "openbsc",
 	.description		= "OpenBSC Asterisk Channel",
 	.properties		= AST_CHAN_TP_WANTSJITTER | AST_CHAN_TP_CREATESJITTER,
-        .requester		= cb_ast_request,
-        .devicestate		= cb_ast_devicestate,
-       .call			= cb_ast_call,
-        .hangup			= cb_ast_hangup,
-        .answer			= cb_ast_answer,
-        .read			= cb_ast_read,
-        .write			= cb_ast_write,
-        .indicate		= cb_ast_indicate,
-        .fixup			= cb_ast_fixup,
-        .send_digit_begin	= cb_ast_senddigit_begin,
-        .send_digit_end		= cb_ast_senddigit_end,
-        .bridge			= ast_rtp_instance_bridge,
+	.requester		= cb_ast_request,
+	.devicestate		= cb_ast_devicestate,
+	.call			= cb_ast_call,
+	.hangup			= cb_ast_hangup,
+	.answer			= cb_ast_answer,
+	.read			= cb_ast_read,
+	.write			= cb_ast_write,
+	.indicate		= cb_ast_indicate,
+	.fixup			= cb_ast_fixup,
+	.send_digit_begin	= cb_ast_senddigit_begin,
+	.send_digit_end		= cb_ast_senddigit_end,
+	.bridge			= ast_rtp_instance_bridge,
 };
 
 static struct ast_rtp_glue openbsc_rtp_glue = {
@@ -105,8 +107,7 @@ static int start_rtp(struct ast_channel *channel)
 		return -1;
 	}
 
-	// FIXME use generic addr
-	ast_parse_arg("172.16.32.20", PARSE_ADDR, &bindaddr_tmp);
+	ast_parse_arg("0.0.0.0", PARSE_ADDR, &bindaddr_tmp);
 	subchan->rtp = ast_rtp_instance_new("asterisk", sched, &bindaddr_tmp, NULL);
 
 	if (subchan->rtp == NULL) {
@@ -123,7 +124,6 @@ static int start_rtp(struct ast_channel *channel)
 	ast_rtp_instance_set_prop(subchan->rtp, AST_RTP_PROPERTY_NAT, 0);
 	ast_rtp_codecs_packetization_set(ast_rtp_instance_get_codecs(subchan->rtp),
 					subchan->rtp, &default_prefs);
-
 
 	struct sockaddr_in local;
 	struct ast_sockaddr local_tmp;
@@ -151,22 +151,21 @@ static int start_rtp(struct ast_channel *channel)
 	return 0;
 }
 
-#define my_context	"localsets" // FIXME must be configurable
 static struct ast_channel *openbsc_new_channel(const char *linkedid, const char *dest)
 {
 	struct ast_format tmpfmt;
 	struct subchannel *subchan;
 	struct ast_channel *channel;
 
-	channel = ast_channel_alloc(	1,		/* needqueue */
-					AST_STATE_DOWN,	/* state */
-					"cid_num",	/* cid_num */
-					"cid_name",	/* cid_name */
-					"code",		/* code */
-					dest,		/* extension */
-					my_context,	/* context */
-					linkedid,	/* linked ID */
-					0,		/* callnums */
+	channel = ast_channel_alloc(	1,				/* needqueue */
+					AST_STATE_DOWN,			/* state */
+					"cid_num",			/* cid_num */
+					"cid_name",			/* cid_name */
+					"code",				/* code */
+					dest,				/* extension */
+					conf_info->context,		/* context */
+					linkedid,			/* linked ID */
+					0,				/* callnums */
 					"openbsc/%s@%s-%d",
 					"name",
 					"dname",
@@ -438,6 +437,28 @@ void *do_outgoing_call(const char *dest, uint32_t callref)
 	return subchan;
 }
 
+void do_hangup(uint32_t callref, void *data)
+{
+	struct subchannel *subchan;
+	struct ast_channel *channel;
+
+	ast_log(LOG_NOTICE, "\n");
+
+	subchan = data;
+	if (subchan == NULL) {
+		ast_log(LOG_DEBUG, "subchan is NULL\n");
+		return;
+	}
+
+	channel = subchan->channel;
+	if (channel == NULL) {
+		ast_log(LOG_DEBUG, "channel is NULL\n");
+		return;
+	}
+
+	ast_queue_hangup(channel);
+}
+
 void do_answer(struct rtp_socket *rtp_socket, uint32_t callref, void *data)
 {
 	struct subchannel *subchan;
@@ -494,11 +515,13 @@ static int load_module(void)
 {
 	ast_log(LOG_NOTICE, "load OpenBSC module\n");
 
+	config_init(&conf_info);
+
 	ast_channel_register(&openbsc_tech);
 	sched = ast_sched_context_create();
 	rtp_init();
 
-	if (openbsc_init())
+	if (openbsc_init(conf_info))
 		return AST_MODULE_LOAD_DECLINE;
 
 	pthread_create(&g_main_tid, NULL, openbsc_main, NULL);

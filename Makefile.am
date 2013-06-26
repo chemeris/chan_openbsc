@@ -7,7 +7,7 @@ AM_LDFLAGS = $(COVERAGE_LDFLAGS)
 
 lib_LTLIBRARIES = libchan_openbsc.la
 
-libchan_openbsc_la_SOURCES = channel.c bsc.c mncc.c
+libchan_openbsc_la_SOURCES = channel.c bsc.c config.c mncc.c
 libchan_openbsc_la_LIBADD = \
 		$(top_builddir)/src/libmsc/libmsc.la \
 		$(top_builddir)/src/libbsc/libbsc.la \

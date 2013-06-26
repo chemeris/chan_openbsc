@@ -30,6 +30,7 @@
 #include <sys/types.h>
 
 #include "bsc.h"
+#include "config.h"
 #include "mncc.h"
 
 void *tall_authciphop_ctx;
@@ -77,7 +78,7 @@ static int create_pcap_file(char *file)
 
 void *openbsc_main(void *arg)
 {
-	ast_log(LOG_DEBUG, "openbsc main loop");
+	ast_log(LOG_DEBUG, "openbsc main loop\n");
 	while (1) {
 		log_reset_context();
 		osmo_select_main(0);
@@ -92,6 +93,10 @@ static struct osmo_timer_list db_sync_timer;
 
 static void subscr_expire_cb(void *data)
 {
+	if (bsc_gsmnet == NULL) {
+		return;
+	}
+
         subscr_expire(bsc_gsmnet);
         osmo_timer_schedule(&bsc_gsmnet->subscr_expire_timer, EXPIRE_INTERVAL);
 }
@@ -108,11 +113,11 @@ static void db_sync_timer_cb(void *data)
         osmo_timer_schedule(&db_sync_timer, DB_SYNC_INTERVAL);
 }
 
-int openbsc_init()
+int openbsc_init(struct conf_infos *conf_info)
 {
 	int rc;
 
-	create_pcap_file("/var/log/openbsc.log");
+	create_pcap_file(conf_info->log_path);
 
 	srand(time(NULL));
 
@@ -133,7 +138,7 @@ int openbsc_init()
 
 	ipacc_rtp_direct = 0;
 
-	rc = bsc_bootstrap_network(mncc_recv, /*mncc_recv_ast,*/ "/home/nib/coding/host-bsc/openbsc/openbsc/src/chan_openbsc/openbsc.cfg");
+	rc = bsc_bootstrap_network(mncc_recv, conf_info->openbsc_cfg_path);
 	if (rc < 0) {
 		ast_log(LOG_ERROR, "Failed to bootstrap network\n");
 		return -1;
@@ -147,7 +152,7 @@ int openbsc_init()
 		return -1;
 	}
 
-	rc = db_init("/home/nib/coding/host-bsc/openbsc/openbsc/src/chan_openbsc/hlr.sqlite3");
+	rc = db_init(conf_info->hlr_db_path);
 	if (rc) {
 		ast_log(LOG_ERROR, "DB: Failed to init database. Please check the option settings.\n");
 		return -1;
