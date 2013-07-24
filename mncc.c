@@ -146,7 +146,7 @@ static int mncc_setup_ind(struct gsm_call *call, int msg_type,
 		DEBUGP(DMNCC, "(call %x) Forwarding SETUP to remote.\n", call->callref);
 		return mncc_tx_to_cc(remote->net, MNCC_SETUP_REQ, setup);
 	} else {
-		call->ext_ptr = do_outgoing_call(setup->called.number, call->callref);
+		call->ext_ptr = chan_do_outgoing_call(setup->called.number, call->callref);
 
 		memset(&mncc, 0, sizeof(struct gsm_mncc));
 		mncc.callref = call->callref;
@@ -266,7 +266,7 @@ static int mncc_rel_ind(struct gsm_call *call, int msg_type, struct gsm_mncc *re
 
 static int mncc_rel_cnf(struct gsm_call *call, int msg_type, struct gsm_mncc *rel)
 {
-	do_hangup(call->callref, call->ext_ptr);
+	chan_do_hangup(call->callref, call->ext_ptr);
 	free_call(call);
 	return 0;
 }
@@ -276,13 +276,13 @@ static int mncc_rcv_tchf(struct gsm_call *call, int msg_type,
 			 struct gsm_data_frame *dfr)
 {
 	printf("mncc_recv_tchf\n");
-	do_write_frame(dfr, call->ext_ptr);
+	chan_do_write_frame(dfr, call->ext_ptr);
 	return 0;
 }
 
-void hack_hangup_phone(uint32_t callref)
+void mncc_hangup_phone(uint32_t callref)
 {
-	DEBUGP(DMNCC, "hack_hangup_phone: %u\n", callref);
+	DEBUGP(DMNCC, "mncc_hangup_phone: %u\n", callref);
 
 	struct gsm_mncc hangup;
 	struct gsm_call *call;
@@ -303,9 +303,9 @@ void hack_hangup_phone(uint32_t callref)
 	return;
 }
 
-int hack_connect_phone(uint32_t callref)
+int mncc_connect_phone(uint32_t callref)
 {
-	DEBUGP(DMNCC, "hack_connect_phone: %d\n", callref);
+	DEBUGP(DMNCC, "mncc_connect_phone: %d\n", callref);
 
 	struct gsm_trans *transmitter;
 	struct gsm_mncc connect;
@@ -324,12 +324,12 @@ int hack_connect_phone(uint32_t callref)
 	mncc_tx_to_cc(call->net, MNCC_FRAME_RECV, &connect);
 
 	transmitter = trans_find_by_callref(call->net, call->callref);
-	do_answer(transmitter->conn->lchan->abis_ip.rtp_socket, call->callref, call->ext_ptr);
+	chan_do_answer(transmitter->conn->lchan->abis_ip.rtp_socket, call->callref, call->ext_ptr);
 
 	return 0;
 }
 
-int hack_call_phone(const char *dest, void *data)
+int mncc_call_phone(const char *dest, void *data)
 {
 	struct gsm_subscriber *subscriber;
 	subscriber = subscr_get_by_extension(bsc_gsmnet, dest);
@@ -421,7 +421,7 @@ int mncc_recv(struct gsm_network *net, struct msgb *msg)
 		rc = mncc_setup_cnf(call, msg_type, arg);
 		if (!call->remote_ref) {
 			transmitter = trans_find_by_callref(call->net, call->callref);
-			do_answer(transmitter->conn->lchan->abis_ip.rtp_socket, call->callref, call->ext_ptr);
+			chan_do_answer(transmitter->conn->lchan->abis_ip.rtp_socket, call->callref, call->ext_ptr);
 		}
 		break;
 	case MNCC_SETUP_COMPL_IND:
@@ -451,7 +451,7 @@ int mncc_recv(struct gsm_network *net, struct msgb *msg)
 		break;
 	case MNCC_START_DTMF_IND:
 		DEBUGP(DMNCC, "DTMF key: %c\n", data->keypad);
-		do_dtmf(data->keypad, call->ext_ptr);
+		chan_do_dtmf(data->keypad, call->ext_ptr);
 		rc = mncc_tx_to_cc(net, MNCC_START_DTMF_RSP, data);
 		break;
 	case MNCC_STOP_DTMF_IND:

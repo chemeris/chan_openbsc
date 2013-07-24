@@ -231,7 +231,7 @@ static int cb_ast_call(struct ast_channel *channel, const char *dest, int timeou
         ast_queue_control(channel, AST_CONTROL_RINGING);
 
 	ast_log(LOG_DEBUG, "Destination called: %s\n", dest);
-	return hack_call_phone(dest, (void*)subchan);
+	return mncc_call_phone(dest, (void*)subchan);
 }
 
 static int cb_ast_hangup(struct ast_channel *channel)
@@ -246,7 +246,7 @@ static int cb_ast_hangup(struct ast_channel *channel)
 		return -1;
 	}
 
-	hack_hangup_phone(subchan->callref);
+	mncc_hangup_phone(subchan->callref);
 
 	if (subchan->rtp) {
 		ast_rtp_instance_stop(subchan->rtp);
@@ -277,7 +277,7 @@ static int cb_ast_answer(struct ast_channel *channel)
 		return -1;
 	}
 
-	hack_connect_phone(subchan->callref);
+	mncc_connect_phone(subchan->callref);
 	return 0;
 }
 
@@ -385,7 +385,7 @@ static int cb_ast_set_rtp_peer(struct ast_channel *channel,
 	return -1;
 }
 
-void do_dtmf(const char keypad, void *data)
+void chan_do_dtmf(const char keypad, void *data)
 {
 	struct subchannel *subchan;
 	struct ast_frame frame = { AST_FRAME_DTMF, };
@@ -410,7 +410,7 @@ void do_dtmf(const char keypad, void *data)
 	ast_queue_frame(subchan->channel, &frame);
 }
 
-void *do_outgoing_call(const char *dest, uint32_t callref)
+void *chan_do_outgoing_call(const char *dest, uint32_t callref)
 {
 	ast_log(LOG_DEBUG, "outgoing call: %s::%u\n", dest, callref);
 
@@ -437,7 +437,7 @@ void *do_outgoing_call(const char *dest, uint32_t callref)
 	return subchan;
 }
 
-void do_hangup(uint32_t callref, void *data)
+void chan_do_hangup(uint32_t callref, void *data)
 {
 	struct subchannel *subchan;
 	struct ast_channel *channel;
@@ -459,7 +459,7 @@ void do_hangup(uint32_t callref, void *data)
 	ast_queue_hangup(channel);
 }
 
-void do_answer(struct rtp_socket *rtp_socket, uint32_t callref, void *data)
+void chan_do_answer(struct rtp_socket *rtp_socket, uint32_t callref, void *data)
 {
 	struct subchannel *subchan;
 	struct ast_channel *channel;
@@ -483,7 +483,7 @@ void do_answer(struct rtp_socket *rtp_socket, uint32_t callref, void *data)
 	rtp_socket_proxy(subchan->rs, rtp_socket);
 }
 
-void do_write_frame(struct gsm_data_frame *dfr, void *data)
+void chan_do_write_frame(struct gsm_data_frame *dfr, void *data)
 {
 	struct subchannel *subchan;
 
