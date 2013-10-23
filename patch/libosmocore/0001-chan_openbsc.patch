@@ -1,0 +1,67 @@
+From bfdf817d3497fb19175c3f3da7e072447789141b Mon Sep 17 00:00:00 2001
+From: Nicolas J. Bouliane <nicolas.bouliane@nutaq.com>
+Date: Wed, 23 Oct 2013 13:46:52 +0200
+Subject: [PATCH] chan_openbsc
+
+---
+ src/Makefile.am     |    2 +-
+ src/gb/Makefile.am  |    2 +-
+ src/gsm/Makefile.am |    2 +-
+ src/vty/Makefile.am |    2 +-
+ 4 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/src/Makefile.am b/src/Makefile.am
+index e85f3e3..dfd97fd 100644
+--- a/src/Makefile.am
++++ b/src/Makefile.am
+@@ -2,7 +2,7 @@
+ # Please read Chapter 6 "Library interface versions" of the libtool documentation before making any modification
+ LIBVERSION=4:0:0
+ 
+-AM_CFLAGS = -Wall $(all_includes) -I$(top_srcdir)/include -I$(top_builddir)/include
++AM_CFLAGS = -Wall -fPIC $(all_includes) -I$(top_srcdir)/include -I$(top_builddir)/include
+ 
+ lib_LTLIBRARIES = libosmocore.la
+ 
+diff --git a/src/gb/Makefile.am b/src/gb/Makefile.am
+index 076ad55..c1699f0 100644
+--- a/src/gb/Makefile.am
++++ b/src/gb/Makefile.am
+@@ -5,7 +5,7 @@
+ # Please read Chapter 6 "Library interface versions" of the libtool documentation before making any modification
+ LIBVERSION=3:0:0
+ 
+-AM_CFLAGS = -Wall ${GCC_FVISIBILITY_HIDDEN} -fno-strict-aliasing $(all_includes) -I$(top_srcdir)/include
++AM_CFLAGS = -Wall -fPIC ${GCC_FVISIBILITY_HIDDEN} -fno-strict-aliasing $(all_includes) -I$(top_srcdir)/include
+ 
+ # FIXME: this should eventually go into a milenage/Makefile.am
+ noinst_HEADERS = common_vty.h
+diff --git a/src/gsm/Makefile.am b/src/gsm/Makefile.am
+index fa2265a..25f6a38 100644
+--- a/src/gsm/Makefile.am
++++ b/src/gsm/Makefile.am
+@@ -2,7 +2,7 @@
+ # Please read Chapter 6 "Library interface versions" of the libtool documentation before making any modification
+ LIBVERSION=4:0:0
+ 
+-AM_CFLAGS = -Wall ${GCC_FVISIBILITY_HIDDEN} $(all_includes) -I$(top_srcdir)/include
++AM_CFLAGS = -Wall -fPIC ${GCC_FVISIBILITY_HIDDEN} $(all_includes) -I$(top_srcdir)/include
+ 
+ # FIXME: this should eventually go into a milenage/Makefile.am
+ noinst_HEADERS = milenage/aes.h milenage/aes_i.h milenage/aes_wrap.h \
+diff --git a/src/vty/Makefile.am b/src/vty/Makefile.am
+index a6cfd6f..1be7088 100644
+--- a/src/vty/Makefile.am
++++ b/src/vty/Makefile.am
+@@ -2,7 +2,7 @@
+ # Please read Chapter 6 "Library interface versions" of the libtool documentation before making any modification
+ LIBVERSION=0:0:0
+ 
+-AM_CFLAGS = -Wall $(all_includes) -I$(top_srcdir)/include
++AM_CFLAGS = -Wall -fPIC $(all_includes) -I$(top_srcdir)/include
+ 
+ if ENABLE_VTY
+ lib_LTLIBRARIES = libosmovty.la
+-- 
+1.7.2.5
+

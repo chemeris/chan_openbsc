@@ -1,0 +1,159 @@
+From a7a460647f9855ea44d5f1fc4e428a258aa9805d Mon Sep 17 00:00:00 2001
+From: Nicolas J. Bouliane <nicolas.bouliane@nutaq.com>
+Date: Tue, 22 Oct 2013 21:27:41 +0200
+Subject: [PATCH] chan_openbsc
+
+---
+ openbsc/configure.ac              |    2 ++
+ openbsc/include/openbsc/mncc.h    |    2 ++
+ openbsc/src/Makefile.am           |    2 +-
+ openbsc/src/libbsc/Makefile.am    |    4 ++--
+ openbsc/src/libcommon/Makefile.am |    4 ++--
+ openbsc/src/libctrl/Makefile.am   |    4 ++--
+ openbsc/src/libgb/Makefile.am     |    4 ++--
+ openbsc/src/libmsc/Makefile.am    |    6 +++---
+ openbsc/src/libtrau/Makefile.am   |    4 ++--
+ 9 files changed, 18 insertions(+), 14 deletions(-)
+
+diff --git a/openbsc/configure.ac b/openbsc/configure.ac
+index 081e416..bb7b915 100644
+--- a/openbsc/configure.ac
++++ b/openbsc/configure.ac
+@@ -12,6 +12,7 @@ m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
+ dnl checks for programs
+ AC_PROG_MAKE_SET
+ AC_PROG_CC
++AC_PROG_LIBTOOL
+ AC_PROG_INSTALL
+ AC_PROG_RANLIB
+ 
+@@ -148,6 +149,7 @@ AC_OUTPUT(
+     src/libmsc/Makefile
+     src/libmgcp/Makefile
+     src/libcommon/Makefile
++    src/chan_openbsc/Makefile
+     src/osmo-nitb/Makefile
+     src/osmo-bsc/Makefile
+     src/osmo-bsc_nat/Makefile
+diff --git a/openbsc/include/openbsc/mncc.h b/openbsc/include/openbsc/mncc.h
+index 4a99bb1..29a77a4 100644
+--- a/openbsc/include/openbsc/mncc.h
++++ b/openbsc/include/openbsc/mncc.h
+@@ -44,6 +44,8 @@ struct gsm_call {
+ 	uint32_t callref;
+ 	/* the 'remote' transaction */
+ 	uint32_t remote_ref;
++	/* external pointer */
++	void *ext_ptr;
+ };
+ 
+ #define MNCC_SETUP_REQ		0x0101
+diff --git a/openbsc/src/Makefile.am b/openbsc/src/Makefile.am
+index 2cdbb9d..f59ff6f 100644
+--- a/openbsc/src/Makefile.am
++++ b/openbsc/src/Makefile.am
+@@ -2,7 +2,7 @@ AM_CPPFLAGS = $(all_includes) -I$(top_srcdir)/include -I$(top_builddir)
+ AM_CFLAGS=-Wall $(LIBOSMOCORE_CFLAGS) $(LIBOSMOGSM_CFLAGS) $(LIBOSMOGSM_CFLAGS) $(LIBOSMOVTY_CFLAGS) $(COVERAGE_CFLAGS)
+ AM_LDFLAGS = $(LIBOSMOCORE_LIBS) $(LIBOSMOGSM_LIBS) $(COVERAGE_LDFLAGS)
+ 
+-SUBDIRS = libcommon libmgcp libbsc libmsc libtrau libctrl osmo-nitb osmo-bsc_mgcp utils ipaccess gprs
++SUBDIRS = libcommon libmgcp libbsc libmsc libtrau libctrl osmo-nitb osmo-bsc_mgcp utils ipaccess gprs chan_openbsc
+ 
+ # Conditional modules
+ if BUILD_NAT
+diff --git a/openbsc/src/libbsc/Makefile.am b/openbsc/src/libbsc/Makefile.am
+index 42fabab..737e17a 100644
+--- a/openbsc/src/libbsc/Makefile.am
++++ b/openbsc/src/libbsc/Makefile.am
+@@ -2,9 +2,9 @@ AM_CPPFLAGS = $(all_includes) -I$(top_srcdir)/include -I$(top_builddir)
+ AM_CFLAGS=-Wall $(LIBOSMOCORE_CFLAGS) $(LIBOSMOGSM_CFLAGS) \
+ 	$(LIBOSMOVTY_CFLAGS) $(LIBOSMOABIS_CFLAGS) $(COVERAGE_CFLAGS)
+ 
+-noinst_LIBRARIES = libbsc.a
++noinst_LTLIBRARIES = libbsc.la
+ 
+-libbsc_a_SOURCES =	abis_nm.c abis_nm_vty.c \
++libbsc_la_SOURCES =	abis_nm.c abis_nm_vty.c \
+ 			abis_om2000.c abis_om2000_vty.c \
+ 			abis_rsl.c bsc_rll.c \
+ 			paging.c \
+diff --git a/openbsc/src/libcommon/Makefile.am b/openbsc/src/libcommon/Makefile.am
+index e41326f..fbe4546 100644
+--- a/openbsc/src/libcommon/Makefile.am
++++ b/openbsc/src/libcommon/Makefile.am
+@@ -2,6 +2,6 @@ AM_CPPFLAGS = $(all_includes) -I$(top_srcdir)/include -I$(top_builddir)
+ AM_CFLAGS=-Wall $(LIBOSMOCORE_CFLAGS) $(LIBOSMOGSM_CFLAGS) \
+ 	$(LIBOSMOVTY_CFLAGS) $(LIBOSMOABIS_CFLAGS) $(COVERAGE_CFLAGS)
+ 
+-noinst_LIBRARIES = libcommon.a
++noinst_LTLIBRARIES = libcommon.la
+ 
+-libcommon_a_SOURCES = bsc_version.c common_vty.c debug.c gsm_data.c gsm_data_shared.c socket.c talloc_ctx.c
++libcommon_la_SOURCES = bsc_version.c common_vty.c debug.c gsm_data.c gsm_data_shared.c socket.c talloc_ctx.c
+diff --git a/openbsc/src/libctrl/Makefile.am b/openbsc/src/libctrl/Makefile.am
+index 4f039c8..94dae86 100644
+--- a/openbsc/src/libctrl/Makefile.am
++++ b/openbsc/src/libctrl/Makefile.am
+@@ -2,6 +2,6 @@ AM_CPPFLAGS = $(all_includes) -I$(top_srcdir)/include -I$(top_builddir)
+ AM_CFLAGS=-Wall $(LIBOSMOCORE_CFLAGS) $(LIBOSMOVTY_CFLAGS) $(LIBOSMOABIS_CFLAGS) $(COVERAGE_CFLAGS)
+ AM_LDFLAGS = $(LIBOSMOCORE_LIBS) $(LIBOSMOABIS_LIBS) $(COVERAGE_LDFLAGS)
+ 
+-noinst_LIBRARIES = libctrl.a
++noinst_LTLIBRARIES = libctrl.la
+ 
+-libctrl_a_SOURCES =	control_if.c control_cmd.c
++libctrl_la_SOURCES =	control_if.c control_cmd.c
+diff --git a/openbsc/src/libgb/Makefile.am b/openbsc/src/libgb/Makefile.am
+index 1592431..9463b93 100644
+--- a/openbsc/src/libgb/Makefile.am
++++ b/openbsc/src/libgb/Makefile.am
+@@ -2,8 +2,8 @@ AM_CPPFLAGS = $(all_includes) -I$(top_srcdir)/include -I$(top_builddir)
+ AM_CFLAGS=-Wall -fno-strict-aliasing $(LIBOSMOCORE_CFLAGS) \
+ 	$(LIBOSMOVTY_CFLAGS) $(LIBOSMOABIS_CFLAGS) $(COVERAGE_CFLAGS)
+ 
+-noinst_LIBRARIES = libgb.a
++noinst_LTLIBRARIES = libgb.la
+ 
+-libgb_a_SOURCES = gprs_ns.c gprs_ns_frgre.c gprs_ns_vty.c \
++libgb_la_SOURCES = gprs_ns.c gprs_ns_frgre.c gprs_ns_vty.c \
+ 		  gprs_bssgp.c gprs_bssgp_util.c gprs_bssgp_vty.c \
+ 		  gprs_bssgp_bss.c common_vty.c
+diff --git a/openbsc/src/libmsc/Makefile.am b/openbsc/src/libmsc/Makefile.am
+index 2b50599..325f97a 100644
+--- a/openbsc/src/libmsc/Makefile.am
++++ b/openbsc/src/libmsc/Makefile.am
+@@ -2,9 +2,9 @@ AM_CPPFLAGS = $(all_includes) -I$(top_srcdir)/include -I$(top_builddir)
+ AM_CFLAGS=-Wall $(LIBOSMOCORE_CFLAGS) $(LIBOSMOVTY_CFLAGS) \
+ 	$(LIBOSMOABIS_CFLAGS) $(COVERAGE_CFLAGS)
+ 
+-noinst_LIBRARIES = libmsc.a
++noinst_LTLIBRARIES = libmsc.la
+ 
+-libmsc_a_SOURCES =	auth.c \
++libmsc_la_SOURCES =	auth.c \
+ 			db.c \
+ 			gsm_04_08.c gsm_04_11.c gsm_04_80.c \
+ 			gsm_subscriber.c \
+@@ -20,5 +20,5 @@ libmsc_a_SOURCES =	auth.c \
+ 
+ if BUILD_SMPP
+ noinst_HEADERS = smpp_smsc.h
+-libmsc_a_SOURCES += smpp_smsc.c smpp_openbsc.c smpp_vty.c smpp_utils.c
++libmsc_la_SOURCES += smpp_smsc.c smpp_openbsc.c smpp_vty.c smpp_utils.c
+ endif
+diff --git a/openbsc/src/libtrau/Makefile.am b/openbsc/src/libtrau/Makefile.am
+index 0c8cf17..69a0c99 100644
+--- a/openbsc/src/libtrau/Makefile.am
++++ b/openbsc/src/libtrau/Makefile.am
+@@ -2,6 +2,6 @@ AM_CPPFLAGS = $(all_includes) -I$(top_srcdir)/include -I$(top_builddir)
+ AM_CFLAGS=-Wall $(LIBOSMOCORE_CFLAGS) $(LIBOSMOVTY_CFLAGS) $(LIBOSMOABIS_CFLAGS) $(COVERAGE_CFLAGS)
+ AM_LDFLAGS = $(LIBOSMOCORE_LIBS) $(LIBOSMOGSM_LIBS) $(LIBOSMOABIS_LIBS) $(COVERAGE_LDFLAGS)
+ 
+-noinst_LIBRARIES = libtrau.a
++noinst_LTLIBRARIES = libtrau.la
+ 
+-libtrau_a_SOURCES = rtp_proxy.c trau_mux.c trau_upqueue.c
++libtrau_la_SOURCES = rtp_proxy.c trau_mux.c trau_upqueue.c
+-- 
+1.7.2.5
+
