@@ -21,8 +21,8 @@ openbsc/openbsc/src/chan_openbsc/
 
 BUG:
 
- The sound becomes garbage after 35seconds... and osmo-bts stats complaining
- 
+ The sound becomes garbage after 35seconds or so and osmo-bts start complaining
+
 <0011> trau/osmo_ortp.c:0 Cannot use the scheduled mode: the scheduler is not started.
   Call ortp_scheduler_init() at the begginning of the application.<0011> trau/osmo_ortp.c:0
   can't guess current timestamp because session is not scheduled.<0011> trau/osmo_ortp.c:141
