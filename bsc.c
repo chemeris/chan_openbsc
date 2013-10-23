@@ -168,7 +168,6 @@ int openbsc_init(struct conf_infos *conf_info)
 
 	ast_log(LOG_NOTICE, "DB: Database prepared.\n");
 
-
 	db_sync_timer.cb = db_sync_timer_cb;
 	db_sync_timer.data = NULL;
 	osmo_timer_schedule(&db_sync_timer, DB_SYNC_INTERVAL);
