@@ -8,9 +8,9 @@ You should not depend on it for anything other than testing.
 chan_openbsc: it does creates a module that bridge OpenBSC and Asterisk.
 
 There is 3 paths to apply:
-libosmo-abis/0001-chan_openbsc.path
-libosmocore/0001-chan_openbsc.patch
-openbsc/0001-chan_openbsc.path
+patch/libosmo-abis/0001-chan_openbsc.path
+patch/libosmocore/0001-chan_openbsc.patch
+patch/openbsc/0001-chan_openbsc.path
 
 Copy each patch, into the directory of each project (libosmocore, libosmo-abis, openbsc)
 To apply a patch do: patch -p1 < 0001-chan_openbsc.path
