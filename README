@@ -5,7 +5,7 @@ Proof Of Concept.
 You should not depend on it for anything other than testing.
 ------------------------------------------------------------
 
-chan_openbsc: it does creates a module that bridge OpenBSC and Asterisk.
+chan_openbsc: it does creates a module that bridge OpenBSC and Asterisk11.
 
 There is 3 paths to apply:
 patch/libosmo-abis/0001-chan_openbsc.path
